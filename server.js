@@ -136,8 +136,14 @@ function parseCookies(req) {
 
 // Prüft ob Nutzer angemeldet ist (entweder per Cookie oder per Basic Auth)
 function isAuthenticated(req) {
-  // 1. Session Cookie prüfen
   const cookies = parseCookies(req);
+
+  // Wenn sich der Nutzer explizit abgemeldet hat, ignorieren wir vom Browser gespeicherte Basic-Auth-Header
+  if (cookies.esn_logged_out === '1') {
+    return false;
+  }
+
+  // 1. Session Cookie prüfen
   if (cookies.esn_session && verifySessionToken(cookies.esn_session)) {
     return true;
   }
@@ -180,13 +186,14 @@ function detectImageFormat(buffer) {
 }
 
 // Login-Maske rendern
-function renderLoginForm(errorMsg = '') {
+function renderLoginForm(errorMsg = '', successMsg = '') {
   return `<!DOCTYPE html>
 <html lang="de">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Admin Login — ESN Buddy Bingo</title>
+  <link rel="icon" type="image/svg+xml" href="/favicon.ico">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <style>
@@ -210,6 +217,7 @@ function renderLoginForm(errorMsg = '') {
     button.submit { width: 100%; padding: 12px; background: var(--navy); color: #fff; border: none; border-radius: 6px; font-family: var(--display); text-transform: uppercase; letter-spacing: 0.08em; font-size: 16px; font-weight: 700; cursor: pointer; margin-top: 8px; transition: background 0.2s; }
     button.submit:hover { background: #1d2060; }
     .error { background: #FEE2E2; border-left: 4px solid #EF4444; color: #991B1B; padding: 10px 12px; font-size: 13px; border-radius: 0 4px 4px 0; margin-bottom: 18px; }
+    .success { background: #DCFCE7; border-left: 4px solid #16A34A; color: #166534; padding: 10px 12px; font-size: 13.5px; border-radius: 0 4px 4px 0; margin-bottom: 18px; }
     .back { display: block; text-align: center; margin-top: 20px; font-size: 13px; color: #64748b; text-decoration: none; }
     .back:hover { color: var(--navy); }
   </style>
@@ -218,6 +226,7 @@ function renderLoginForm(errorMsg = '') {
   <div class="card">
     <h1>ESN Bingo Admin</h1>
     <p class="sub">Melde dich an, um Einreichungen und Fotos zu sehen.</p>
+    ${successMsg ? `<div class="success">${escapeHtml(successMsg)}</div>` : ''}
     ${errorMsg ? `<div class="error">${escapeHtml(errorMsg)}</div>` : ''}
     <form method="POST" action="/admin/login">
       <div class="field">
@@ -271,22 +280,37 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  // 2. Healthcheck
+  // 2. Favicon (liefert SVG-Icon aus, verhindert 404-Fehler im Browser)
+  if (pathname === '/favicon.ico') {
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><circle cx="50" cy="50" r="48" fill="#2E3192"/><text x="50" y="68" font-size="52" font-family="system-ui, sans-serif" font-weight="bold" fill="#fff" text-anchor="middle">B</text></svg>`;
+    res.writeHead(200, {
+      'Content-Type': 'image/svg+xml',
+      'Cache-Control': 'public, max-age=86400'
+    });
+    return res.end(svg);
+  }
+
+  // 3. Healthcheck
   if (req.method === 'GET' && pathname === '/health') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     return res.end(JSON.stringify({ status: 'ok', uptime: process.uptime() }));
   }
 
-  // 3. Admin Logout
+  // 4. Admin Logout (löscht Cookies & verhindert automatische Wiederanmeldung durch Browser-Cache)
   if (req.method === 'GET' && pathname === '/admin/logout') {
-    res.writeHead(302, {
-      'Set-Cookie': 'esn_session=; Path=/admin; HttpOnly; SameSite=Lax; Max-Age=0',
-      'Location': '/admin'
+    console.log(`[AUTH] Abmeldung durchgeführt von IP ${clientIp}`);
+    res.writeHead(200, {
+      'Content-Type': 'text/html; charset=utf-8',
+      'Set-Cookie': [
+        'esn_session=; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT; Max-Age=0; HttpOnly; SameSite=Lax',
+        'esn_session=; Path=/admin; Expires=Thu, 01 Jan 1970 00:00:00 GMT; Max-Age=0; HttpOnly; SameSite=Lax',
+        'esn_logged_out=1; Path=/; Max-Age=86400; SameSite=Lax'
+      ]
     });
-    return res.end();
+    return res.end(renderLoginForm('', 'Du hast dich erfolgreich abgemeldet.'));
   }
 
-  // 4. Admin Web-Login (POST /admin/login)
+  // 5. Admin Web-Login (POST /admin/login)
   if (req.method === 'POST' && pathname === '/admin/login') {
     let body = [];
     req.on('data', chunk => body.push(chunk));
@@ -314,7 +338,10 @@ const server = http.createServer((req, res) => {
         console.log(`[AUTH] Erfolgreicher Login von IP ${clientIp} als "${user}"`);
         const token = createSessionToken();
         res.writeHead(302, {
-          'Set-Cookie': `esn_session=${token}; Path=/admin; HttpOnly; SameSite=Lax; Max-Age=86400`,
+          'Set-Cookie': [
+            `esn_session=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=86400`,
+            'esn_logged_out=; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT; Max-Age=0'
+          ],
           'Location': '/admin'
         });
         return res.end();
