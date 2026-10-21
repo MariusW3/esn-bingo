@@ -1,0 +1,977 @@
+<!doctype html>
+<html lang="de">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ESN Göttingen — Buddy Bingo Wintersemester</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+<style>
+  :root{
+    --cyan:#00AEEF; --magenta:#EC008C; --orange:#F47B20; --green:#7AC143; --navy:#2E3192;
+    --ink:#141733; --paper:#fff; --mist:#EEF1F7; --line:#D6DBE8;
+    --display:"Barlow Condensed","Oswald","Arial Narrow",sans-serif;
+    --body:"Inter",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--mist);color:var(--ink);font-family:var(--body);-webkit-font-smoothing:antialiased}
+  .sheet{max-width:1100px;margin:0 auto;background:var(--paper);padding-bottom:26px}
+
+  .starbar{display:flex;height:9px}
+  .starbar span{flex:1}
+  .starbar span:nth-child(1){background:var(--cyan)}
+  .starbar span:nth-child(2){background:var(--magenta)}
+  .starbar span:nth-child(3){background:var(--green)}
+  .starbar span:nth-child(4){background:var(--orange)}
+  .starbar span:nth-child(5){background:var(--navy)}
+
+  header{padding:20px 26px 16px;border-bottom:2px solid var(--ink)}
+  .eyebrow{font-family:var(--display);font-size:14px;letter-spacing:.22em;text-transform:uppercase;color:var(--navy);font-weight:600;margin:0 0 2px}
+  h1{font-family:var(--display);font-size:clamp(38px,7vw,62px);line-height:.9;margin:0;text-transform:uppercase;font-weight:700}
+  h1 em{font-style:normal;color:var(--magenta)}
+  .kicker{margin:7px 0 0;font-size:13.5px;max-width:62ch;color:#40465f;line-height:1.5}
+  .names{display:flex;flex-wrap:wrap;gap:16px;margin-top:16px}
+  .field{flex:1 1 180px;min-width:140px}
+  .field label{display:block;font-family:var(--display);text-transform:uppercase;letter-spacing:.14em;font-size:11.5px;color:#6a7089;margin-bottom:2px;font-weight:600}
+  .field input{width:100%;border:none;border-bottom:2px solid var(--line);background:transparent;font-family:var(--body);font-size:15px;font-weight:600;padding:4px 0;color:var(--ink)}
+  .field input:focus{outline:none;border-bottom-color:var(--magenta)}
+
+  .bar{display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding:13px 26px;border-bottom:1px solid var(--line)}
+  .score{display:flex;align-items:baseline;gap:7px;font-family:var(--display)}
+  .score b{font-size:34px;line-height:1;font-weight:700}
+  .score span{font-size:13px;letter-spacing:.14em;text-transform:uppercase;color:#6a7089;font-weight:600}
+  .track{flex:1 1 180px;min-width:150px;height:11px;background:var(--mist);border:1px solid var(--line);overflow:hidden}
+  .fill{height:100%;width:0;background:linear-gradient(90deg,var(--cyan),var(--magenta) 38%,var(--orange) 70%,var(--green));transition:width .35s ease}
+  .badge{font-family:var(--display);text-transform:uppercase;letter-spacing:.12em;font-size:12.5px;font-weight:700;color:var(--navy)}
+  .btns{display:flex;gap:7px;margin-left:auto;flex-wrap:wrap}
+  button{font-family:var(--display);text-transform:uppercase;letter-spacing:.12em;font-weight:600;font-size:12.5px;padding:7px 12px;border:2px solid var(--ink);background:var(--paper);color:var(--ink);cursor:pointer}
+  button:hover{background:var(--ink);color:var(--paper)}
+  button:focus-visible{outline:3px solid var(--cyan);outline-offset:2px}
+  .saveNote{font-size:11.5px;color:#7b8199;font-family:var(--display);letter-spacing:.1em;text-transform:uppercase;font-weight:600}
+
+  /* ---------- month columns ---------- */
+  .months{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--line)}
+  @media (max-width:880px){.months{grid-template-columns:repeat(2,1fr)}}
+  @media (max-width:540px){.months{grid-template-columns:1fr}}
+  .col{background:var(--paper);display:flex;flex-direction:column}
+  .mhead{padding:9px 12px 8px;color:#fff;position:relative}
+  .mhead h3{font-family:var(--display);text-transform:uppercase;letter-spacing:.06em;font-size:23px;margin:0;line-height:1;font-weight:700}
+  .mhead .span{font-family:var(--display);font-size:11.5px;letter-spacing:.14em;text-transform:uppercase;opacity:.85;font-weight:600}
+  .mhead .mprog{position:absolute;left:0;bottom:0;height:4px;width:0;background:#fff;opacity:.9;transition:width .3s ease}
+  .m0 .mhead{background:var(--cyan)} .m1 .mhead{background:var(--magenta)}
+  .m2 .mhead{background:var(--orange)} .m3 .mhead{background:var(--navy)}
+  .col.complete .mhead::after{content:"BINGO";position:absolute;right:10px;top:11px;font-family:var(--display);font-size:14px;letter-spacing:.16em;font-weight:700}
+
+  .tile{position:relative;background:var(--paper);border:0;border-top:1px solid var(--line);text-align:left;width:100%;padding:11px 11px 34px;min-height:128px;font-family:var(--body);display:block;flex:1;cursor:pointer}
+  .tile:hover{background:#FAFBFF}
+  .tile:focus-visible{outline:3px solid var(--cyan);outline-offset:-3px}
+  .tile .title{display:block;font-size:13.5px;font-weight:600;line-height:1.28;margin-bottom:4px;padding-right:34px}
+  .tile .hint{display:block;font-size:11.5px;line-height:1.4;color:#666d87}
+  .pts{position:absolute;left:11px;bottom:10px;font-family:var(--display);font-size:11.5px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:#fff;padding:2px 7px;background:var(--ink)}
+  .m0 .pts{background:var(--cyan)} .m1 .pts{background:var(--magenta)}
+  .m2 .pts{background:var(--orange)} .m3 .pts{background:var(--navy)}
+  .mark{position:absolute;right:10px;bottom:9px;width:24px;height:24px;border:2px solid var(--line);background:transparent;padding:0;cursor:pointer}
+  .mark:hover{border-color:var(--ink);background:transparent}
+  .tile.done .title,.tile.done .hint{opacity:.42}
+  .tile.done::after{content:"";position:absolute;inset:0;pointer-events:none;background:repeating-linear-gradient(135deg,rgba(122,193,67,.14) 0 9px,transparent 9px 18px)}
+  .tile.done .mark{border-color:var(--green);background:var(--green)}
+  .tile.done .mark::before{content:"";position:absolute;left:5px;top:9px;width:11px;height:5px;border-left:3px solid #fff;border-bottom:3px solid #fff;transform:rotate(-45deg)}
+
+  /* photo proof */
+  .cam{position:absolute;right:40px;bottom:9px;width:24px;height:24px;border:2px solid var(--line);background:transparent;padding:0;cursor:pointer;display:flex;align-items:center;justify-content:center}
+  .cam svg{width:13px;height:13px;fill:#8a91a8}
+  .cam:hover{border-color:var(--ink);background:transparent}
+  .cam:hover svg{fill:var(--ink)}
+  .tile .thumb{position:absolute;top:9px;right:9px;width:30px;height:30px;object-fit:cover;border:2px solid var(--green);cursor:pointer;z-index:2}
+
+  /* ESN free field */
+  .tile.free{background:linear-gradient(180deg,#F4F6FF,#fff 55%);border-left:4px solid var(--navy)}
+  .tile.free .tag{display:inline-flex;align-items:center;gap:5px;font-family:var(--display);font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--navy);font-weight:700;margin-bottom:6px}
+  .tile.free .tag svg{width:12px;height:12px;fill:var(--navy)}
+  .tile.free input{width:100%;border:none;border-bottom:2px dashed var(--line);background:transparent;font-family:var(--body);font-size:13.5px;font-weight:600;color:var(--ink);padding:2px 0 4px}
+  .tile.free input:focus{outline:none;border-bottom-color:var(--navy);border-bottom-style:solid}
+  .tile.free .ptsBtn{position:absolute;left:11px;bottom:10px;border:0;color:#fff;padding:2px 7px;font-size:11.5px;background:var(--navy)}
+  .ptsBtn:hover{filter:brightness(.85);color:#fff}
+  .bonus{position:absolute;left:11px;bottom:10px;transform:translateX(0);font-family:var(--display);font-size:11.5px;font-weight:700;letter-spacing:.09em;color:var(--navy)}
+
+  /* ---------- map ---------- */
+  .mapwrap{border-top:2px solid var(--ink);padding:18px 26px 0}
+  .mapwrap h2{margin-bottom:10px}
+  .mapgrid{display:flex;gap:22px;flex-wrap:wrap}
+  .mapsvg{flex:1 1 460px;min-width:280px}
+  .mapsvg svg{width:100%;height:auto;display:block}
+  .maplist{flex:1 1 260px;min-width:220px}
+  .maplist ol{margin:0;padding-left:0;list-style:none;font-size:12px;line-height:1.5;color:#40465f;columns:2;column-gap:18px}
+  .maplist li{margin-bottom:5px;break-inside:avoid}
+  .maplist b{font-family:var(--display);font-size:12px;color:var(--ink);margin-right:5px}
+  .around{margin-top:12px;font-size:12px;color:#40465f;line-height:1.6}
+  .around b{font-family:var(--display);letter-spacing:.06em}
+
+  footer{padding:18px 26px 0;display:flex;flex-wrap:wrap;gap:26px}
+  .colf{flex:1 1 230px}
+  h2{font-family:var(--display);text-transform:uppercase;letter-spacing:.16em;font-size:12.5px;margin:0 0 7px;color:var(--navy);font-weight:700}
+  ul{margin:0;padding-left:16px;font-size:12.5px;line-height:1.6;color:#40465f}
+  .levels{list-style:none;padding:0}
+  .levels li{display:flex;gap:9px;align-items:baseline}
+  .levels b{font-family:var(--display);font-size:14.5px;min-width:48px;color:var(--ink)}
+  .sig{margin:20px 26px 0;padding:11px 15px;background:var(--navy);color:#fff;font-family:var(--display);text-transform:uppercase;letter-spacing:.14em;font-size:12.5px;font-weight:600;display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap}
+
+  /* ---------- einreichen ---------- */
+  .submit{border-top:2px solid var(--ink);margin-top:18px;padding:18px 26px 0}
+  .submit .row{display:flex;gap:20px;flex-wrap:wrap;align-items:flex-start}
+  .submit .fb{flex:1 1 300px;min-width:240px}
+  .submit textarea{width:100%;min-height:74px;border:2px solid var(--line);background:var(--paper);font-family:var(--body);font-size:13px;padding:8px 10px;color:var(--ink);resize:vertical}
+  .submit textarea:focus{outline:none;border-color:var(--navy)}
+  .submit .act{flex:1 1 260px;min-width:230px}
+  .submit .status{font-size:12.5px;line-height:1.55;color:#40465f;margin:0 0 10px}
+  .submit .status b{font-family:var(--display);letter-spacing:.06em}
+  .bigbtn{width:100%;padding:13px;font-size:15px;background:var(--navy);color:#fff;border-color:var(--navy)}
+  .bigbtn:hover{background:var(--ink);border-color:var(--ink);color:#fff}
+  .bigbtn[disabled]{background:var(--mist);border-color:var(--line);color:#9aa1b8;cursor:not-allowed}
+  .bigbtn[disabled]:hover{background:var(--mist);color:#9aa1b8}
+  .subrow{display:flex;gap:7px;margin-top:8px;flex-wrap:wrap}
+  .subrow button{flex:1 1 auto}
+  .code{font-family:var(--display);font-size:20px;letter-spacing:.14em;font-weight:700;color:var(--navy)}
+  .warnbox{margin-top:10px;padding:9px 12px;border-left:4px solid var(--orange);background:#FFF7F0;font-size:12.5px;line-height:1.5;color:#40465f}
+
+  /* modal */
+  .modal{position:fixed;inset:0;background:rgba(10,12,28,.82);display:none;align-items:center;justify-content:center;z-index:60;padding:20px}
+  .modal.on{display:flex}
+  .modal .card{background:var(--paper);max-width:440px;width:100%;padding:22px;border-top:9px solid var(--orange)}
+  .modal.final .card{border-top-color:var(--magenta)}
+  .modal h3{font-family:var(--display);text-transform:uppercase;letter-spacing:.1em;font-size:22px;margin:0 0 8px;font-weight:700}
+  .modal p{font-size:13.5px;line-height:1.55;color:#40465f;margin:0 0 16px}
+  .modal .mbtns{display:flex;gap:8px;flex-wrap:wrap}
+  .modal .mbtns button{flex:1 1 140px}
+  .modal .go{background:var(--magenta);border-color:var(--magenta);color:#fff}
+  .modal .go:hover{background:var(--ink);border-color:var(--ink)}
+
+  /* lightbox */
+  .lb{position:fixed;inset:0;background:rgba(10,12,28,.9);display:none;align-items:center;justify-content:center;flex-direction:column;gap:14px;z-index:50;padding:20px}
+  .lb.on{display:flex}
+  .lb img{max-width:92vw;max-height:75vh;border:4px solid #fff}
+  .lb .lbbtns{display:flex;gap:8px}
+  .lb button{background:#fff;border-color:#fff}
+
+  @media print{
+    @page{size:A4 portrait;margin:8mm}
+    body{background:#fff}
+    .sheet{max-width:none}
+    .btns,.badge,.saveNote,.cam,.lb,.modal,.submit textarea,.bigbtn,.subrow{display:none !important}
+    .submit{padding:7pt 0 0;border-top:1pt solid #000}
+    .submit .status{font-size:7.4pt}
+    header{padding:4px 0 6px} h1{font-size:34pt} .kicker{font-size:7.5pt}
+    .bar{padding:5px 0} .names{margin-top:8px}
+    .months{grid-template-columns:repeat(4,1fr);gap:.6pt;background:#000}
+    .mhead{padding:4pt 5pt 3pt} .mhead h3{font-size:14pt} .mhead .span{font-size:6.5pt}
+    .tile{min-height:0;padding:4pt 5pt 14pt;page-break-inside:avoid}
+    .tile .title{font-size:7.6pt;margin-bottom:2pt;padding-right:22pt} .tile .hint{font-size:6.4pt;line-height:1.3}
+    .pts,.ptsBtn,.bonus{left:5pt;bottom:4pt;font-size:6.6pt;padding:1pt 3.5pt}
+    .mark{width:13pt;height:13pt;right:4pt;bottom:3.5pt}
+    .tile .thumb{width:22pt;height:22pt;top:4pt;right:4pt}
+    .tile.done::after{display:none}
+    .tile.free input{font-size:7.6pt}
+    .mapwrap{padding:8pt 0 0;page-break-before:always}
+    .maplist ol{font-size:7pt}
+    footer{padding:7pt 0 0} ul{font-size:7.4pt;line-height:1.4}
+    .sig{margin:7pt 0 0;font-size:7.4pt;padding:4pt 7pt}
+    *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  }
+</style>
+
+<div class="sheet">
+  <div class="starbar"><span></span><span></span><span></span><span></span><span></span></div>
+
+  <header>
+    <p class="eyebrow" id="eyebrow"></p>
+    <h1>Buddy <em>Bingo</em></h1>
+    <p class="kicker" id="kicker"></p>
+    <div class="names">
+      <div class="field"><label id="l1"></label><input id="n1" type="text" autocomplete="off"></div>
+      <div class="field"><label id="l2"></label><input id="n2" type="text" autocomplete="off"></div>
+      <div class="field"><label id="l3"></label><input id="n3" type="text" autocomplete="off"></div>
+    </div>
+  </header>
+
+  <div class="bar">
+    <div class="score"><b id="pts">0</b><span id="ptsLabel"></span></div>
+    <div class="track"><div class="fill" id="fill"></div></div>
+    <div class="badge" id="badge"></div>
+    <span class="saveNote" id="saveNote"></span>
+    <div class="btns">
+      <button id="langBtn" type="button"></button>
+      <button id="tplBtn" type="button"></button>
+      <button id="sendBtn" type="button"></button>
+      <button id="printBtn" type="button"></button>
+      <button id="resetBtn" type="button"></button>
+    </div>
+  </div>
+
+  <div class="months" id="months"></div>
+
+  <div class="mapwrap">
+    <h2 id="h_map"></h2>
+    <div class="mapgrid">
+      <div class="mapsvg" id="mapsvg"></div>
+      <div class="maplist">
+        <ol id="maplist"></ol>
+        <div class="around" id="around"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="submit">
+    <h2 id="h_submit"></h2>
+    <div class="row">
+      <div class="fb">
+        <textarea id="feedback" rows="3"></textarea>
+      </div>
+      <div class="act">
+        <p class="status" id="subStatus"></p>
+        <button class="bigbtn" id="submitBtn" type="button"></button>
+        <div class="subrow" id="afterRow" style="display:none">
+          <button id="photoBtn" type="button"></button>
+          <button id="dlPhotosBtn" type="button"></button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <footer>
+    <div class="colf"><h2 id="h_rules"></h2><ul id="rules"></ul></div>
+    <div class="colf"><h2 id="h_levels"></h2><ul class="levels" id="levels"></ul></div>
+  </footer>
+
+  <div class="sig"><span id="sig1"></span><span>esn-goettingen.de</span></div>
+</div>
+
+<div class="modal" id="modal">
+  <div class="card">
+    <h3 id="mTitle"></h3>
+    <p id="mText"></p>
+    <div class="mbtns">
+      <button id="mCancel" type="button"></button>
+      <button class="go" id="mGo" type="button"></button>
+    </div>
+  </div>
+</div>
+
+<div class="lb" id="lb">
+  <img id="lbImg" alt="">
+  <div class="lbbtns">
+    <button id="lbDel" type="button"></button>
+    <button id="lbClose" type="button"></button>
+  </div>
+</div>
+
+<input type="file" id="filePick" accept="image/*" style="display:none">
+<input type="file" id="jsonPick" accept="application/json" style="display:none">
+
+<script>
+/* ======================================================================
+   HIER EINTRAGEN — der Rest der Datei muss nicht angefasst werden.
+
+   FORMULAR A (Daten, ohne Anmeldung, KEIN Upload-Feld)
+   Fragen in dieser Reihenfolge anlegen, alle als Kurzantwort bzw. Absatz:
+     1 Buddy 1        2 Buddy 2      3 Gruppe      4 Punktestand
+     5 Erledigte Aufgaben (Absatz)   6 Unsere ESN-Events (Absatz)
+     7 Feedback (Absatz)             8 Code
+   Dann: Drei-Punkte-Menü → „Vorausgefüllte Antwort abrufen“, in die Felder
+   exakt BUDDY1, BUDDY2, GRUPPE, PUNKTE, AUFGABEN, EVENTS, FEEDBACK, CODE
+   tippen, Link kopieren und unten einsetzen.
+
+   FORMULAR B (Fotos, Anmeldung erforderlich)
+     1 Code (Kurzantwort)   2 Beweisfotos (Datei-Upload, mehrere Dateien)
+   Ebenfalls vorausgefüllten Link holen, ins Code-Feld CODE tippen.
+   ====================================================================== */
+var FORM = {
+  dataPrefill:  "",   // vorausgefüllter Link von Formular A
+  photoPrefill: ""    // vorausgefüllter Link von Formular B
+};
+
+/* Events, die beim Export in die Vorlage eingebacken werden. Nicht von Hand ändern. */
+var PRESET = null; /*__PRESET__*/
+
+const MONTHS = [
+  { de:{name:"Oktober", span:"15.–31. Oktober"}, en:{name:"October", span:"15–31 October"}, tiles:[
+    {p:1, de:["Zum Gänseliesel gehen","Das Wahrzeichen am Markt — Foto zu zweit. Geküsst wird erst nach der letzten Prüfung."],
+          en:["Go see the Gänseliesel","The landmark on the market square — photo of you two. The kiss is saved for after your final exam."]},
+    {p:1, de:["Zusammen in der Mensa essen","Danach kurze Runde über den Campus: ZHG, SUB, Nordcampus."],
+          en:["Eat at the Mensa together","Then a short campus loop: ZHG, the library, Nordcampus."]},
+    {p:3, de:["Picknick am Kiessee","Goldener Oktober: Decke, Brötchen vom Markt, Runde um den See."],
+          en:["Picnic at the Kiessee","Golden October: a blanket, bread from the market, a loop around the lake."]},
+    {p:3, de:["Wanderung zum Kehr oder Hainberg","Durch den Herbstwald hoch, oben einkehren."],
+          en:["Hike up to Kehr or Hainberg","Up through autumn woods, food and drinks at the top."]},
+    {p:5, de:["Tagestrip nach Hann. Münden","30 Minuten mit dem Zug: Fachwerkaltstadt und der Weserstein."],
+          en:["Day trip to Hann. Münden","30 minutes by train: timbered old town and the Weserstein."]},
+    {free:true}
+  ]},
+  { de:{name:"November", span:"1.–30. November"}, en:{name:"November", span:"1–30 November"}, tiles:[
+    {p:1, de:["Auf einen Kaffee treffen","Cron & Lanz für die Tradition, oder sucht euch euer Stammcafé."],
+          en:["Meet up for coffee","Cron & Lanz for the tradition, or find your own regular café."]},
+    {p:1, de:["Unikino im ZHG","Zwei Euro, meist im Original mit Untertiteln. Programm hängt am Campus aus."],
+          en:["Unikino at the ZHG","Two euros, usually in the original with subtitles. Programme is posted on campus."]},
+    {p:3, de:["Forum Wissen besuchen","Das Wissensmuseum der Uni, Eintritt frei — die beste Option, wenn es schüttet."],
+          en:["Visit Forum Wissen","The university's museum of knowledge, free entry — the best call when it pours."]},
+    {p:3, de:["Kneipenabend","Nörgelbuff, Apex oder Trou. Vorher checken, wer Live-Musik hat."],
+          en:["Pub night","Nörgelbuff, Apex or Trou. Check who has live music on."]},
+    {p:5, de:["Plesseburg bei Bovenden","Wanderung zur Burgruine, Blick über das Leinetal."],
+          en:["Plesseburg near Bovenden","Hike up to the castle ruin, views over the Leine valley."]},
+    {free:true}
+  ]},
+  { de:{name:"Dezember", span:"1.–22. Dezember"}, en:{name:"December", span:"1–22 December"}, tiles:[
+    {p:1, de:["Alter Botanischer Garten","Spaziergang mitten in der Stadt, danach ins warme Gewächshaus."],
+          en:["Old botanical garden","A walk right in the centre, then into the warm greenhouse."]},
+    {p:1, de:["Zusammen kochen oder backen","Jede*r ein Gericht von zuhause — oder Plätzchen für die ganze Buddy-Gruppe."],
+          en:["Cook or bake together","One dish from each home country — or cookies for the whole buddy group."]},
+    {p:3, de:["Weihnachtsmarkt am Gänseliesel","Glühwein und Schmalzkuchen. Ende November bis kurz vor Weihnachten."],
+          en:["Christmas market at the Gänseliesel","Mulled wine and Schmalzkuchen. Late November until just before Christmas."]},
+    {p:3, de:["Sonnenuntergang am Bismarckturm","Im Dezember schon gegen 16 Uhr — kurzer Aufstieg, bester Blick."],
+          en:["Sunset at the Bismarck tower","In December that's around 4pm — short climb, best view in town."]},
+    {p:5, de:["Kassel: Bergpark Wilhelmshöhe","Herkules und Schloss, danach der Weihnachtsmarkt. Wasserspiele nur im Sommer."],
+          en:["Kassel: Bergpark Wilhelmshöhe","Hercules and the palace, then the Christmas market. Water features run in summer only."]},
+    {free:true}
+  ]},
+  { de:{name:"Januar", span:"1.–31. Januar"}, en:{name:"January", span:"1–31 January"}, tiles:[
+    {p:1, de:["Wochenmarkt und Frühstück","Samstags am Gänseliesel einkaufen und danach zusammen frühstücken."],
+          en:["Market and breakfast","Shop at the Saturday market by the Gänseliesel, then have breakfast together."]},
+    {p:1, de:["Drei Nobelpreisträger-Tafeln finden","Sie hängen an früheren Wohnhäusern in der ganzen Altstadt."],
+          en:["Find three Nobel laureate plaques","They hang on former homes all over the old town."]},
+    {p:3, de:["Lernpause in der Eiswiese","Schwimmen oder Sauna, wenn die Klausurphase drückt."],
+          en:["Study break at the Eiswiese","Swimming or sauna when exam season gets heavy."]},
+    {p:3, de:["Kino oder Theater","OmU-Film im Lumière oder ein Stück im Jungen Theater."],
+          en:["Cinema or theatre","A subtitled film at Lumière or a play at Junges Theater."]},
+    {p:5, de:["Harz-Tag","Goslars Altstadt plus Brocken oder Bad Harzburg — im Januar oft mit Schnee."],
+          en:["A day in the Harz","Goslar's old town plus the Brocken or Bad Harzburg — often snowy in January."]},
+    {free:true}
+  ]}
+];
+
+/* Kartenpunkte: x/y sind Zeichenkoordinaten, ungefähr maßstäblich zur echten Lage. */
+const SPOTS = [
+  {x:258,y:195,m:0,de:"Markt & Gänseliesel · Wochenmarkt · Weihnachtsmarkt",en:"Market square & Gänseliesel · weekly and Christmas market"},
+  {x:258,y:82, m:0,de:"Zentralcampus: Mensa, ZHG, Unikino, SUB",en:"Central campus: Mensa, ZHG, Unikino, library"},
+  {x:292,y:124,m:2,de:"Alter Botanischer Garten",en:"Old botanical garden"},
+  {x:166,y:178,m:1,de:"Forum Wissen",en:"Forum Wissen"},
+  {x:226,y:224,m:1,de:"Kneipenviertel: Nörgelbuff, Apex, Trou",en:"Pub quarter: Nörgelbuff, Apex, Trou"},
+  {x:357,y:259,m:3,de:"Kino Lumière",en:"Kino Lumière"},
+  {x:106,y:391,m:0,de:"Kiessee: Picknick und Runde um den See",en:"Kiessee: picnic and lakeside loop"},
+  {x:192,y:323,m:3,de:"Eiswiese: Schwimmbad und Sauna",en:"Eiswiese: pool and sauna"},
+  {x:644,y:274,m:2,de:"Bismarckturm",en:"Bismarck tower"},
+  {x:614,y:188,m:0,de:"Kehr und Hainberg",en:"Kehr and Hainberg"}
+];
+
+const TXT = {
+  de:{
+    eyebrow:"ESN Göttingen · International Buddy Programm · Wintersemester",
+    kicker:"Vier Monate, 24 Felder, 68 Punkte. Jeden Monat gibt es kleine und große Aufgaben plus ein ESN-Feld für unsere eigenen Events — die zählen extra. Abhaken, Beweisfoto anhängen, fertig.",
+    l:["Buddy 1","Buddy 2","Gruppe"],
+    ptsLabel:"Punkte", pt:"Punkt", pts:"Punkte",
+    lang:"English", tpl:"Vorlage exportieren", send:"Karte einsenden", print:"Drucken", reset:"Reset",
+    hRules:"So geht's", hLevels:"Punktestände", hMap:"Wo das alles liegt",
+    freeTag:"ESN-Event", freePlaceholder:"Unser Event eintragen", bonus:"+1 ESN-Bonus",
+    saved:"Automatisch gespeichert", savedNo:"Nur diese Sitzung",
+    del:"Foto löschen", close:"Schließen",
+    around:"<b>Umland:</b> Plesseburg 8 km nördlich (Bus + 30 Min Fußweg) · Hann. Münden 25 km westlich (30 Min Zug) · Seeburger See 15 km östlich (Rad) · Kassel 45 km südlich (35 Min Zug) · Goslar und Harz 70 km nordöstlich (75 Min Zug). Alles mit dem Semesterticket.",
+    hSubmit:"Karte einreichen",
+    fbPlaceholder:"Was war euer bester Moment? Was sollen wir nächstes Semester ändern?",
+    submitBtn:"Karte absenden",
+    statusReady:"Alle 24 Felder sind abgehakt. Ein Klick, und die Karte samt Fotos wird eingereicht.",
+    statusOpen:"Noch <b>{n}</b> von 24 Feldern offen. Ihr könnt trotzdem absenden — aber nur einmal.",
+    statusSent:"Eingereicht am {d}. Euer Bestätigungs-Code:",
+    statusNoForm:"Bereit zum Einreichen an den Server.",
+    sentBtn:"Bereits eingereicht",
+    photoBtn:"Fotos hochladen",
+    dlPhotos:"Fotos herunterladen",
+    warn1Title:"Noch nicht voll",
+    warn1Text:"{n} Felder sind leer. Wir nehmen pro Paar nur eine Einreichung an — was jetzt fehlt, könnt ihr später nicht mehr nachreichen.",
+    warn1Cancel:"Zurück zur Karte",
+    warn1Go:"Trotzdem weiter",
+    warn2Title:"Letzte Warnung",
+    warn2Text:"Danach ist der Knopf gesperrt und die Karte samt Fotos wird an den Server übermittelt, mit {p} von {m} Punkten. Wirklich jetzt senden?",
+    warn2Cancel:"Abbrechen",
+    warn2Go:"Endgültig senden",
+    sentTitle:"Erfolgreich eingereicht!",
+    sentText:"Eure Karte und alle Beweisfotos wurden direkt an den ESN-Server übermittelt.<br>Notiert euch euren Code: <b>{c}</b>",
+    sentClose:"Schließen",
+    sentGo:"Fertig",
+    rules:[
+      "Alles zählt nur, wenn ihr es zu zweit macht.",
+      "Beweisfoto über das Kamera-Symbol anhängen — es bleibt in eurem Browser gespeichert.",
+      "ESN-Felder sind blau markiert und geben einen Bonuspunkt obendrauf.",
+      "Eine komplette Monatsspalte ist ein Bingo.",
+      "Laufzeit: 15. Oktober bis 31. Januar. Einreichen könnt ihr genau einmal."
+    ],
+    levels:[["15+","Warm geworden"],["30+","Ihr seid ein Team"],["50+","Göttingen-Profis"],["68","Alles abgehakt"]],
+    sig1:"Volle Karte? Auf „Karte einsenden“ klicken und die Datei an das ESN-Team schicken"
+  },
+  en:{
+    eyebrow:"ESN Göttingen · International Buddy Programme · Winter semester",
+    kicker:"Four months, 24 fields, 68 points. Every month has small and big tasks plus one ESN field for our own events — those score extra. Tick it off, attach a photo, done.",
+    l:["Buddy 1","Buddy 2","Group"],
+    ptsLabel:"points", pt:"point", pts:"points",
+    lang:"Deutsch", tpl:"Export template", send:"Send card in", print:"Print", reset:"Reset",
+    hRules:"How it works", hLevels:"Score levels", hMap:"Where everything is",
+    freeTag:"ESN event", freePlaceholder:"Write in our event", bonus:"+1 ESN bonus",
+    saved:"Saved automatically", savedNo:"This session only",
+    del:"Delete photo", close:"Close",
+    around:"<b>Around town:</b> Plesseburg 8 km north (bus + 30 min walk) · Hann. Münden 25 km west (30 min by train) · Seeburger See 15 km east (by bike) · Kassel 45 km south (35 min by train) · Goslar and the Harz 70 km northeast (75 min by train). All covered by the semester ticket.",
+    hSubmit:"Send in your card",
+    fbPlaceholder:"What was your best moment? What should we change next semester?",
+    submitBtn:"Submit card",
+    statusReady:"All 24 fields are ticked. One click and your card with photos is submitted.",
+    statusOpen:"<b>{n}</b> of 24 fields still open. You can send anyway — but only once.",
+    statusSent:"Submitted on {d}. Your confirmation code:",
+    statusNoForm:"Ready to submit to the server.",
+    sentBtn:"Already submitted",
+    photoBtn:"Upload photos",
+    dlPhotos:"Download photos",
+    warn1Title:"Not full yet",
+    warn1Text:"{n} fields are empty. We accept one submission per pair — whatever is missing now can't be added later.",
+    warn1Cancel:"Back to the card",
+    warn1Go:"Continue anyway",
+    warn2Title:"Final warning",
+    warn2Text:"After this the button locks and the card with photos will be submitted to the server, with {p} of {m} points. Send it now?",
+    warn2Cancel:"Cancel",
+    warn2Go:"Send for good",
+    sentTitle:"Successfully submitted!",
+    sentText:"Your card and all proof photos were sent to the ESN server.<br>Keep your code safe: <b>{c}</b>",
+    sentClose:"Close",
+    sentGo:"Done",
+    rules:[
+      "Everything counts only when the two of you do it together.",
+      "Attach your proof photo with the camera icon — it stays saved in your browser.",
+      "ESN fields are marked in blue and score one bonus point on top.",
+      "A complete month column is a bingo.",
+      "Runs from 15 October to 31 January. You can submit exactly once."
+    ],
+    levels:[["15+","Off to a start"],["30+","You're a team"],["50+","Göttingen pros"],["68","Everything ticked"]],
+    sig1:"Card full? Hit “Send card in” and mail the file to the ESN team"
+  }
+};
+
+/* ---------------- storage: IndexedDB → Artefakt-Speicher → nur Sitzung ---------------- */
+const Store = {
+  mode:"mem", db:null, mem:{},
+  async init(){
+    try{
+      this.db = await new Promise((res,rej)=>{
+        const rq = indexedDB.open("esn-buddy-bingo",1);
+        rq.onupgradeneeded = ()=> rq.result.createObjectStore("kv");
+        rq.onsuccess = ()=> res(rq.result);
+        rq.onerror = ()=> rej(rq.error);
+        setTimeout(()=>rej(new Error("timeout")),2500);
+      });
+      this.mode = "idb"; return;
+    }catch(e){}
+    if(window.storage){ this.mode = "artifact"; return; }
+    this.mode = "mem";
+  },
+  async get(k){
+    try{
+      if(this.mode==="idb"){
+        return await new Promise((res,rej)=>{
+          const rq = this.db.transaction("kv","readonly").objectStore("kv").get(k);
+          rq.onsuccess=()=>res(rq.result ?? null); rq.onerror=()=>rej(rq.error);
+        });
+      }
+      if(this.mode==="artifact"){ const r = await window.storage.get(k); return r ? r.value : null; }
+    }catch(e){}
+    return this.mem[k] ?? null;
+  },
+  async set(k,v){
+    try{
+      if(this.mode==="idb"){
+        return await new Promise((res,rej)=>{
+          const rq = this.db.transaction("kv","readwrite").objectStore("kv").put(v,k);
+          rq.onsuccess=()=>res(true); rq.onerror=()=>rej(rq.error);
+        });
+      }
+      if(this.mode==="artifact"){ await window.storage.set(k,v); return true; }
+    }catch(e){}
+    this.mem[k]=v; return true;
+  },
+  async del(k){
+    try{
+      if(this.mode==="idb"){
+        return await new Promise((res,rej)=>{
+          const rq = this.db.transaction("kv","readwrite").objectStore("kv").delete(k);
+          rq.onsuccess=()=>res(true); rq.onerror=()=>rej(rq.error);
+        });
+      }
+      if(this.mode==="artifact"){ await window.storage.delete(k); return true; }
+    }catch(e){}
+    delete this.mem[k]; return true;
+  }
+};
+
+const KEY = "card";
+const CYCLE = [1,3,5];
+let state = { lang:"de", names:["","",""], done:{}, free:{}, photos:{}, feedback:"", code:null, submitted:null };
+let pending = null;
+const $ = id => document.getElementById(id);
+const uid = (m,t) => m+"-"+t;
+const esc = s => (s||"").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+
+let saveTimer = null;
+function save(){
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(()=> Store.set(KEY, JSON.stringify(state)), 250);
+}
+
+function tilePts(m,t){
+  const tile = MONTHS[m].tiles[t];
+  if(!tile.free) return tile.p;
+  const f = state.free[uid(m,t)];
+  return (f && f.p ? f.p : 3) + 1; // ESN-Bonus
+}
+function maxPts(){ let s=0; MONTHS.forEach((mo,m)=>mo.tiles.forEach((_,t)=> s+=tilePts(m,t))); return s; }
+
+const ICON_CAM = '<svg viewBox="0 0 24 24"><path d="M9 3l-1.5 2H4a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-3.5L15 3H9zm3 5a5 5 0 1 1 0 10 5 5 0 0 1 0-10zm0 2a3 3 0 1 0 0 6 3 3 0 0 0 0-6z"/></svg>';
+const ICON_STAR = '<svg viewBox="0 0 24 24"><path d="M12 2l2.9 6.3 6.9.8-5.1 4.7 1.4 6.8L12 17.2 5.9 20.6l1.4-6.8L2.2 9.1l6.9-.8L12 2z"/></svg>';
+
+function renderChrome(){
+  const t = TXT[state.lang];
+  document.documentElement.lang = state.lang;
+  $("eyebrow").textContent = t.eyebrow;
+  $("kicker").textContent = t.kicker;
+  ["l1","l2","l3"].forEach((id,i)=> $(id).textContent = t.l[i]);
+  $("ptsLabel").textContent = t.ptsLabel;
+  $("langBtn").textContent = t.lang;
+  $("tplBtn").textContent = t.tpl;
+  $("sendBtn").textContent = t.send;
+  $("printBtn").textContent = t.print;
+  $("resetBtn").textContent = t.reset;
+  $("h_rules").textContent = t.hRules;
+  $("h_levels").textContent = t.hLevels;
+  $("h_map").textContent = t.hMap;
+  $("sig1").textContent = t.sig1;
+  $("lbDel").textContent = t.del;
+  $("lbClose").textContent = t.close;
+  $("saveNote").textContent = Store.mode === "mem" ? t.savedNo : t.saved;
+  $("rules").innerHTML = t.rules.map(r=>`<li>${r}</li>`).join("");
+  $("levels").innerHTML = t.levels.map(([n,l])=>`<li><b>${n}</b>${l}</li>`).join("");
+  $("around").innerHTML = t.around;
+  $("h_submit").textContent = t.hSubmit;
+  $("feedback").placeholder = t.fbPlaceholder;
+  $("photoBtn").textContent = t.photoBtn;
+  $("dlPhotosBtn").textContent = t.dlPhotos;
+  renderMap();
+  renderSubmit();
+}
+
+function renderMap(){
+  const t = TXT[state.lang];
+  const cols = ["var(--cyan)","var(--magenta)","var(--orange)","var(--navy)"];
+  const pins = SPOTS.map((s,i)=>`
+    <g>
+      <circle cx="${s.x}" cy="${s.y}" r="13" fill="${cols[s.m]}"/>
+      <text x="${s.x}" y="${s.y+4.5}" text-anchor="middle" font-family="var(--display)" font-size="13" font-weight="700" fill="#fff">${i+1}</text>
+    </g>`).join("");
+  $("mapsvg").innerHTML = `
+  <svg viewBox="0 0 700 460" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="${t.hMap}">
+    <rect width="700" height="460" fill="#F7F9FD"/>
+
+    <!-- Stadtwald: unregelmäßiger Waldrand im Osten -->
+    <path d="M700 34 C646 44 606 58 592 90 C578 122 616 142 604 172 C592 204 552 208 542 240
+             C532 274 574 286 560 318 C546 352 512 356 508 390 C505 420 528 434 524 460 L700 460 Z"
+          fill="#E2EED6"/>
+    <path d="M700 62 C664 70 634 84 622 108 C610 134 640 152 630 178 C620 206 590 210 582 238
+             C574 268 608 280 596 308 C584 338 556 344 552 374 C549 400 568 416 566 460 L700 460 Z"
+          fill="#D6E8C6"/>
+    <text x="628" y="126" text-anchor="middle" font-family="var(--display)" font-size="15" letter-spacing="2.5" fill="#7C9A5E">STADTWALD</text>
+
+    <!-- Leine, deutlich westlich der Bahn -->
+    <path d="M84 0 C94 62 72 122 80 188 C88 252 66 312 78 378 C84 418 98 438 102 460"
+          stroke="#BBD6EA" stroke-width="11" fill="none" stroke-linecap="round"/>
+    <text x="20" y="330" font-family="var(--display)" font-size="13" letter-spacing="2" fill="#9BB6CC">LEINE</text>
+
+    <!-- Leinekanal am Westrand der Altstadt -->
+    <path d="M206 108 C212 148 198 190 204 240 C208 276 218 296 228 316"
+          stroke="#D6E8F4" stroke-width="5" fill="none"/>
+
+    <!-- Bahnstrecke -->
+    <path d="M152 0 L143 460" stroke="#C9D2E4" stroke-width="3" stroke-dasharray="10 8"/>
+
+    <!-- Straßen und Wall -->
+    <ellipse cx="250" cy="185" rx="56" ry="46" fill="none" stroke="#C9D2E4" stroke-width="8"/>
+    <path d="M254 139 L258 86" stroke="#C9D2E4" stroke-width="6"/>
+    <path d="M306 194 C384 208 476 200 604 186" stroke="#C9D2E4" stroke-width="6" fill="none"/>
+    <path d="M236 230 C216 268 202 298 194 322 C172 350 132 372 108 390" stroke="#C9D2E4" stroke-width="6" fill="none"/>
+    <path d="M298 216 L355 257" stroke="#C9D2E4" stroke-width="5"/>
+
+    <text x="250" y="186" text-anchor="middle" font-family="var(--display)" font-size="13" letter-spacing="2" fill="#9AA4BC">ALTSTADT</text>
+    <circle cx="148" cy="142" r="6" fill="#9AA4BC"/>
+    <text x="138" y="130" text-anchor="end" font-family="var(--display)" font-size="13" letter-spacing="1.5" fill="#7B8199">BAHNHOF</text>
+    ${pins}
+  </svg>`;
+  $("maplist").innerHTML = SPOTS.map((s,i)=>`<li><b>${i+1}</b>${s[state.lang]}</li>`).join("");
+}
+
+function renderMonths(){
+  const t = TXT[state.lang];
+  $("months").innerHTML = MONTHS.map((mo,m)=>{
+    const head = mo[state.lang];
+    const tiles = mo.tiles.map((tile,i)=>{
+      const id = uid(m,i), on = !!state.done[id], p = tilePts(m,i);
+      const photo = state.photos[id];
+      const thumb = photo ? `<img class="thumb" src="${photo}" data-id="${id}" alt="">` : "";
+      const cam = `<button type="button" class="cam" data-pick="${id}" aria-label="Foto">${ICON_CAM}</button>`;
+      if(tile.free){
+        const f = state.free[id] || {};
+        const base = f.p || 3;
+        return `<div class="tile free${on?" done":""}" data-m="${m}" data-t="${i}">
+          <span class="tag">${ICON_STAR}${t.freeTag}</span>
+          <input type="text" class="freeInput" data-id="${id}" value="${esc(f.label)}" placeholder="${t.freePlaceholder}">
+          <button type="button" class="ptsBtn" data-id="${id}">${base}+1 ${t.pts}</button>
+          ${thumb}${cam}
+          <button type="button" class="mark" data-m="${m}" data-t="${i}" aria-pressed="${on}" aria-label="check"></button>
+        </div>`;
+      }
+      const [title,hint] = tile[state.lang];
+      return `<div class="tile${on?" done":""}" data-m="${m}" data-t="${i}" role="button" tabindex="0" aria-pressed="${on}">
+        <span class="title">${title}</span>
+        <span class="hint">${hint}</span>
+        <span class="pts">${p} ${p===1?t.pt:t.pts}</span>
+        ${thumb}${cam}
+        <button type="button" class="mark" data-m="${m}" data-t="${i}" aria-label="check"></button>
+      </div>`;
+    }).join("");
+    return `<div class="col m${m}" data-col="${m}">
+      <div class="mhead"><h3>${head.name}</h3><div class="span">${head.span}</div><div class="mprog"></div></div>
+      ${tiles}
+    </div>`;
+  }).join("");
+  renderScore();
+}
+
+function renderScore(){
+  const t = TXT[state.lang];
+  let total = 0;
+  MONTHS.forEach((mo,m)=>{
+    let done = 0;
+    mo.tiles.forEach((_,i)=>{ if(state.done[uid(m,i)]){ done++; total += tilePts(m,i); } });
+    const col = document.querySelector(`.col[data-col="${m}"]`);
+    if(col){
+      col.querySelector(".mprog").style.width = (done/mo.tiles.length*100)+"%";
+      col.classList.toggle("complete", done === mo.tiles.length);
+    }
+  });
+  $("pts").textContent = total;
+  $("fill").style.width = Math.min(100,(total/maxPts()*100))+"%";
+  const hit = [...t.levels].reverse().find(([n])=> total >= parseInt(n,10));
+  $("badge").textContent = total && hit ? hit[1] : "";
+  renderSubmit();
+}
+
+function toggle(m,i){
+  const id = uid(m,i);
+  state.done[id] = !state.done[id];
+  const el = document.querySelector(`.tile[data-m="${m}"][data-t="${i}"]`);
+  if(el) el.classList.toggle("done", state.done[id]);
+  renderScore(); save();
+}
+
+/* ---------------- Fotos ---------------- */
+function shrink(file){
+  return new Promise((res,rej)=>{
+    const fr = new FileReader();
+    fr.onload = ()=>{
+      const img = new Image();
+      img.onload = ()=>{
+        const max = 900, sc = Math.min(1, max/Math.max(img.width,img.height));
+        const c = document.createElement("canvas");
+        c.width = Math.round(img.width*sc); c.height = Math.round(img.height*sc);
+        c.getContext("2d").drawImage(img,0,0,c.width,c.height);
+        res(c.toDataURL("image/jpeg",0.72));
+      };
+      img.onerror = rej; img.src = fr.result;
+    };
+    fr.onerror = rej; fr.readAsDataURL(file);
+  });
+}
+
+$("filePick").addEventListener("change", async e=>{
+  const f = e.target.files[0]; if(!f || !pending) return;
+  try{
+    state.photos[pending] = await shrink(f);
+    const [m,i] = pending.split("-");
+    if(!state.done[pending]) toggle(+m,+i);
+    renderMonths(); save();
+  }catch(err){}
+  e.target.value = ""; pending = null;
+});
+
+let lbId = null;
+function openLb(id){ lbId = id; $("lbImg").src = state.photos[id]; $("lb").classList.add("on"); }
+$("lbClose").addEventListener("click", ()=> $("lb").classList.remove("on"));
+$("lbDel").addEventListener("click", ()=>{ if(lbId){ delete state.photos[lbId]; renderMonths(); save(); } $("lb").classList.remove("on"); });
+
+/* ---------------- Interaktion ---------------- */
+$("months").addEventListener("click", e=>{
+  const thumb = e.target.closest(".thumb");
+  if(thumb){ openLb(thumb.dataset.id); return; }
+  const cam = e.target.closest(".cam");
+  if(cam){ pending = cam.dataset.pick; $("filePick").click(); return; }
+  const mark = e.target.closest(".mark");
+  if(mark){ toggle(+mark.dataset.m, +mark.dataset.t); return; }
+  const ptsBtn = e.target.closest(".ptsBtn");
+  if(ptsBtn){
+    const id = ptsBtn.dataset.id;
+    const cur = state.free[id] || {label:"",p:3};
+    cur.p = CYCLE[(CYCLE.indexOf(cur.p||3)+1) % CYCLE.length];
+    state.free[id] = cur;
+    ptsBtn.textContent = `${cur.p}+1 ${TXT[state.lang].pts}`;
+    renderScore(); save(); return;
+  }
+  if(e.target.closest(".freeInput")) return;
+  const tile = e.target.closest(".tile");
+  if(tile && !tile.classList.contains("free")) toggle(+tile.dataset.m, +tile.dataset.t);
+});
+$("months").addEventListener("keydown", e=>{
+  const tile = e.target.closest('.tile[role="button"]');
+  if(tile && (e.key === "Enter" || e.key === " ")){ e.preventDefault(); toggle(+tile.dataset.m, +tile.dataset.t); }
+});
+$("months").addEventListener("input", e=>{
+  const inp = e.target.closest(".freeInput"); if(!inp) return;
+  const id = inp.dataset.id;
+  state.free[id] = Object.assign({p:3}, state.free[id], {label:inp.value});
+  save();
+});
+
+function download(name, blob){
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob); a.download = name; a.click();
+  setTimeout(()=>URL.revokeObjectURL(a.href), 4000);
+}
+
+/* Vorlage exportieren: eure ESN-Events werden in eine frische Kopie eingebacken */
+$("tplBtn").addEventListener("click", ()=>{
+  const clone = document.documentElement.cloneNode(true);
+  clone.querySelector("#months").innerHTML = "";
+  clone.querySelector("#mapsvg").innerHTML = "";
+  clone.querySelectorAll("header input").forEach(i=> i.removeAttribute("value"));
+  const preset = JSON.stringify({free: state.free, lang: state.lang});
+  const html = "<!doctype html>\n" + clone.outerHTML.replace(
+    /var PRESET = null; \/\*__PRESET__\*\//,
+    "var PRESET = " + preset + "; /*__PRESET__*/"
+  );
+  download("buddy-bingo-vorlage.html", new Blob([html], {type:"text/html"}));
+});
+
+/* Karte einsenden: Fortschritt inklusive Fotos als Datei */
+$("sendBtn").addEventListener("click", ()=>{
+  const name = (state.names[0]||"buddy") + "-" + (state.names[1]||"card");
+  download(name.toLowerCase().replace(/[^a-z0-9-]+/g,"-") + ".json",
+    new Blob([JSON.stringify(state)], {type:"application/json"}));
+});
+$("jsonPick").addEventListener("change", e=>{
+  const f = e.target.files[0]; if(!f) return;
+  const fr = new FileReader();
+  fr.onload = ()=>{ try{ state = Object.assign(state, JSON.parse(fr.result)); renderChrome(); renderMonths(); fillNames(); save(); }catch(err){} };
+  fr.readAsText(f); e.target.value = "";
+});
+
+/* ---------------- Google Form ---------------- */
+const MARKERS = ["BUDDY1","BUDDY2","GRUPPE","PUNKTE","AUFGABEN","EVENTS","FEEDBACK","CODE"];
+
+function parsePrefill(url, markers){
+  try{
+    const u = new URL(url);
+    const base = u.origin + u.pathname.replace(/\/(viewform|formResponse).*$/, "");
+    const map = {};
+    u.searchParams.forEach((v,k)=>{ if(k.indexOf("entry.") === 0 && markers.indexOf(v) > -1) map[v] = k; });
+    if(!Object.keys(map).length) return null;
+    return { post: base + "/formResponse", view: base + "/viewform", map };
+  }catch(e){ return null; }
+}
+const FORM_A = parsePrefill(FORM.dataPrefill, MARKERS);
+const FORM_B = parsePrefill(FORM.photoPrefill, ["CODE"]);
+
+function makeCode(){
+  const abc = "ACDEFGHJKLMNPQRTUVWXY349";
+  let s = ""; for(let i=0;i<4;i++) s += abc[Math.floor(Math.random()*abc.length)];
+  return "GOE-" + s;
+}
+function openCount(){
+  let n = 0;
+  MONTHS.forEach((mo,m)=> mo.tiles.forEach((_,i)=>{ if(!state.done[uid(m,i)]) n++; }));
+  return n;
+}
+function totalPts(){
+  let t = 0;
+  MONTHS.forEach((mo,m)=> mo.tiles.forEach((_,i)=>{ if(state.done[uid(m,i)]) t += tilePts(m,i); }));
+  return t;
+}
+function taskLines(){
+  const out = [];
+  MONTHS.forEach((mo,m)=>{
+    const head = mo[state.lang].name;
+    mo.tiles.forEach((tile,i)=>{
+      const id = uid(m,i), on = state.done[id];
+      const label = tile.free ? ("ESN: " + ((state.free[id]&&state.free[id].label) || "—")) : tile[state.lang][0];
+      out.push((on ? "[x] " : "[ ] ") + head + " · " + label + " (" + tilePts(m,i) + " P" + (state.photos[id] ? ", Foto" : "") + ")");
+    });
+  });
+  return out.join("\n");
+}
+function esnLines(){
+  const out = [];
+  MONTHS.forEach((mo,m)=>{
+    mo.tiles.forEach((tile,i)=>{
+      if(!tile.free) return;
+      const id = uid(m,i), f = state.free[id] || {};
+      out.push(mo[state.lang].name + ": " + (f.label || "—") + (state.done[id] ? " (besucht)" : ""));
+    });
+  });
+  return out.join("\n");
+}
+
+function postToForm(url, data){
+  return new Promise(res=>{
+    let ifr = document.getElementById("gfSink");
+    if(!ifr){
+      ifr = document.createElement("iframe");
+      ifr.id = "gfSink"; ifr.name = "gfSink"; ifr.style.display = "none";
+      document.body.appendChild(ifr);
+    }
+    const f = document.createElement("form");
+    f.action = url; f.method = "POST"; f.target = "gfSink"; f.style.display = "none";
+    Object.keys(data).forEach(k=>{
+      const inp = document.createElement("input");
+      inp.type = "hidden"; inp.name = k; inp.value = data[k];
+      f.appendChild(inp);
+    });
+    document.body.appendChild(f);
+    f.submit();
+    // Googles Antwortseite dürfen wir nicht auslesen, deshalb feste Wartezeit.
+    setTimeout(()=>{ f.remove(); res(true); }, 1800);
+  });
+}
+
+/* Modal */
+let modalGo = null;
+function showModal(title, text, cancel, go, onGo, isFinal){
+  $("mTitle").textContent = title;
+  $("mText").innerHTML = text;
+  $("mCancel").textContent = cancel;
+  $("mGo").textContent = go;
+  $("modal").classList.toggle("final", !!isFinal);
+  $("modal").classList.add("on");
+  modalGo = onGo;
+}
+function hideModal(){ $("modal").classList.remove("on"); modalGo = null; }
+$("mCancel").addEventListener("click", hideModal);
+$("mGo").addEventListener("click", ()=>{ const fn = modalGo; hideModal(); if(fn) fn(); });
+
+function renderSubmit(){
+  const t = TXT[state.lang];
+  const btn = $("submitBtn"), st = $("subStatus");
+  $("feedback").value = state.feedback || "";
+  if(state.submitted){
+    st.innerHTML = t.statusSent.replace("{d}", new Date(state.submitted).toLocaleDateString(state.lang==="de"?"de-DE":"en-GB"))
+      + ' <span class="code">' + (state.code || "") + "</span>";
+    btn.textContent = t.sentBtn; btn.disabled = true;
+    $("afterRow").style.display = "flex";
+    $("photoBtn").style.display = "none";
+    return;
+  }
+  $("afterRow").style.display = "none";
+  const n = openCount();
+  st.innerHTML = n === 0 ? t.statusReady : t.statusOpen.replace("{n}", n);
+  btn.textContent = t.submitBtn; btn.disabled = false;
+}
+
+async function doSubmit(){
+  const t = TXT[state.lang];
+  if(state.submitted) return;
+  state.code = state.code || makeCode();
+
+  const payload = {
+    code: state.code,
+    names: state.names,
+    score: totalPts() + " / " + maxPts(),
+    maxScore: maxPts(),
+    tasks: taskLines(),
+    events: esnLines(),
+    feedback: state.feedback || "",
+    photos: state.photos || {}
+  };
+
+  const btn = $("submitBtn");
+  btn.disabled = true;
+  const originalText = btn.textContent;
+  btn.textContent = state.lang === "de" ? "Wird übertragen..." : "Uploading...";
+
+  try {
+    const res = await fetch("/api/submit", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || ("Serverfehler: " + res.status));
+    }
+
+    state.submitted = Date.now();
+    save();
+    renderSubmit();
+    showModal(t.sentTitle, t.sentText.replace("{c}", state.code), t.sentClose, t.sentClose, null);
+  } catch (err) {
+    console.error(err);
+    alert((state.lang === "de" ? "Fehler beim Absenden: " : "Error submitting: ") + err.message);
+    btn.disabled = false;
+    btn.textContent = originalText;
+  }
+}
+
+function openPhotoForm(){
+  if(!FORM_B) return;
+  const key = FORM_B.map["CODE"];
+  const url = FORM_B.view + (key ? "?usp=pp_url&" + key + "=" + encodeURIComponent(state.code || "") : "");
+  window.open(url, "_blank", "noopener");
+}
+
+$("submitBtn").addEventListener("click", ()=>{
+  const t = TXT[state.lang];
+  const n = openCount();
+  if(n === 0){ doSubmit(); return; }
+  showModal(t.warn1Title, t.warn1Text.replace("{n}", n), t.warn1Cancel, t.warn1Go, ()=>{
+    showModal(t.warn2Title, t.warn2Text.replace("{p}", totalPts()).replace("{m}", maxPts()),
+      t.warn2Cancel, t.warn2Go, doSubmit, true);
+  });
+});
+$("photoBtn").addEventListener("click", openPhotoForm);
+$("feedback").addEventListener("input", e=>{ state.feedback = e.target.value; save(); });
+
+/* Fotos als einzelne Dateien, damit sie in Formular B hochgeladen werden können */
+$("dlPhotosBtn").addEventListener("click", async ()=>{
+  const ids = Object.keys(state.photos);
+  for(let k = 0; k < ids.length; k++){
+    const [m,i] = ids[k].split("-");
+    const tile = MONTHS[+m].tiles[+i];
+    const name = tile.free ? "esn-event" : tile[state.lang][0];
+    const slug = name.toLowerCase().replace(/[äöüß]/g, c=>({"ä":"ae","ö":"oe","ü":"ue","ß":"ss"}[c])).replace(/[^a-z0-9]+/g,"-").slice(0,40);
+    const res = await fetch(state.photos[ids[k]]);
+    download((state.code || "buddy") + "_" + (+m+1) + "-" + (+i+1) + "_" + slug + ".jpg", await res.blob());
+    await new Promise(r=>setTimeout(r, 350));
+  }
+});
+
+$("langBtn").addEventListener("click", ()=>{ state.lang = state.lang==="de"?"en":"de"; renderChrome(); renderMonths(); save(); });
+$("printBtn").addEventListener("click", ()=> window.print());
+$("resetBtn").addEventListener("click", ()=>{ state.done = {}; state.photos = {}; renderMonths(); save(); });
+["n1","n2","n3"].forEach((id,i)=> $(id).addEventListener("input", e=>{ state.names[i]=e.target.value; save(); }));
+function fillNames(){ ["n1","n2","n3"].forEach((id,i)=> $(id).value = state.names[i] || ""); }
+
+(async ()=>{
+  await Store.init();
+  const raw = await Store.get(KEY);
+  if(raw){ try{ state = Object.assign(state, JSON.parse(raw)); }catch(e){} }
+  else if(PRESET){ state.free = PRESET.free || {}; state.lang = PRESET.lang || state.lang; }
+  renderChrome(); renderMonths(); fillNames();
+})();
+</script>
+</html>

@@ -1,0 +1,14 @@
+services:
+  esn-bingo:
+    build: .
+    image: esn-bingo:latest
+    container_name: esn-bingo
+    restart: unless-stopped
+    ports:
+      - "8080:3000"
+    environment:
+      # Diese Variablen können direkt hier oder im Portainer-Environment-Tab gesetzt werden:
+      - ADMIN_USER=${ADMIN_USER:-admin}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-SetzeHierEinPasswort}
+    volumes:
+      - ./data:/app/data
