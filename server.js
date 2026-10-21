@@ -10,28 +10,45 @@ const crypto = require('crypto');
 const PORT = parseInt(process.env.PORT || '3000', 10);
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
 const SUBMISSIONS_DIR = path.join(DATA_DIR, 'submissions');
-const ADMIN_USER = (process.env.ADMIN_USER || 'admin').trim();
-const ADMIN_PASSWORD = (process.env.ADMIN_PASSWORD || '').trim();
+
+// Anführungszeichen bereinigen, falls sie versehentlich in Portainer eingegeben wurden
+function cleanEnvVal(val) {
+  if (!val) return '';
+  let s = String(val).trim();
+  if ((s.startsWith('"') && s.endsWith('"')) || (s.startsWith("'") && s.endsWith("'"))) {
+    s = s.slice(1, -1);
+  }
+  return s.trim();
+}
+
+const ADMIN_USER = cleanEnvVal(process.env.ADMIN_USER) || 'admin';
+const ADMIN_PASSWORD = cleanEnvVal(process.env.ADMIN_PASSWORD);
 
 // Verzeichnis für Einreichungen anlegen
 fs.mkdirSync(SUBMISSIONS_DIR, { recursive: true });
 
-// Sicherheitscheck beim Serverstart: Wurde ein Passwort vergeben?
+// Geheimer Schlüssel für Session-Cookies (wird bei Serverstart zufällig erzeugt)
+const SESSION_SECRET = crypto.randomBytes(32).toString('hex');
+
+// Serverstart-Diagnose im Docker-Log
+console.log('='.repeat(70));
+console.log(`[CONFIG] ESN Bingo Server startet auf Port ${PORT}`);
+console.log(`[CONFIG] ADMIN_USER: "${ADMIN_USER}"`);
 if (!ADMIN_PASSWORD) {
-  console.error('\n' + '='.repeat(70));
-  console.error('⛔ ACHTUNG: Die Umgebungsvariable ADMIN_PASSWORD ist NICHT gesetzt!');
-  console.error('⛔ Der Zugriff auf den Admin-Bereich und alle Fotos ist gesperrt.');
-  console.error('⛔ Bitte setze in Portainer: ADMIN_PASSWORD=<DeinSicheresPasswort>');
-  console.error('='.repeat(70) + '\n');
-} else if (ADMIN_PASSWORD.length < 8) {
-  console.warn('\n⚠️  HINWEIS: Dein ADMIN_PASSWORD ist kürzer als 8 Zeichen. Empfohlen sind mind. 12 Zeichen!\n');
+  console.error('[CONFIG] ⛔ ADMIN_PASSWORD ist NICHT gesetzt! Der Admin-Zugang ist gesperrt.');
+  console.error('[CONFIG] ⛔ Bitte setze in Portainer die Variable ADMIN_PASSWORD.');
+} else {
+  console.log(`[CONFIG] ADMIN_PASSWORD aktiv: JA (Länge: ${ADMIN_PASSWORD.length} Zeichen)`);
+  if (ADMIN_PASSWORD.length < 8) {
+    console.warn('[CONFIG] ⚠️  Passwort ist kürzer als 8 Zeichen.');
+  }
 }
+console.log('='.repeat(70));
 
 // ============================================================================
 // SICHERHEITS-HELPER & RATE-LIMITING
 // ============================================================================
 
-// Globaler Header-Schutz (XSS, Clickjacking, MIME-Sniffing)
 function setSecurityHeaders(res) {
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('X-Frame-Options', 'DENY');
@@ -39,7 +56,6 @@ function setSecurityHeaders(res) {
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
 }
 
-// Client-IP ermitteln (auch hinter Nginx Proxy Manager)
 function getClientIp(req) {
   const forwarded = req.headers['x-forwarded-for'];
   if (forwarded) {
@@ -48,22 +64,19 @@ function getClientIp(req) {
   return req.socket.remoteAddress || 'unknown';
 }
 
-// Timing-Safe-String-Vergleich gegen Timing-Attacks
 function timingSafeCompare(a, b) {
   if (typeof a !== 'string' || typeof b !== 'string') return false;
   const bufA = Buffer.from(a, 'utf-8');
   const bufB = Buffer.from(b, 'utf-8');
   if (bufA.length !== bufB.length) {
-    // Verhindert Längen-Leaks
     crypto.timingSafeEqual(bufA, bufA);
     return false;
   }
   return crypto.timingSafeEqual(bufA, bufB);
 }
 
-// Brute-Force-Schutz für den Admin-Login
-// 5 Fehlversuche -> IP für 15 Minuten gesperrt
-const failedLoginAttempts = new Map(); // ip -> { count, lockedUntil }
+// Brute-Force-Schutz (5 Fehlversuche -> 3 Minuten Sperre)
+const failedLoginAttempts = new Map();
 
 function isIpLocked(ip) {
   const entry = failedLoginAttempts.get(ip);
@@ -77,8 +90,8 @@ function recordFailedLogin(ip) {
   const entry = failedLoginAttempts.get(ip) || { count: 0, lockedUntil: 0 };
   entry.count++;
   if (entry.count >= 5) {
-    entry.lockedUntil = Date.now() + 15 * 60 * 1000; // 15 Minuten Sperre
-    console.warn(`[SECURITY] IP ${ip} wurde für 15 Minuten gesperrt (5 Fehlversuche bei Admin-Login).`);
+    entry.lockedUntil = Date.now() + 3 * 60 * 1000; // 3 Minuten
+    console.warn(`[SECURITY] IP ${ip} wurde für 3 Minuten gesperrt (5 Fehlversuche).`);
   }
   failedLoginAttempts.set(ip, entry);
 }
@@ -87,75 +100,67 @@ function resetFailedLogin(ip) {
   failedLoginAttempts.delete(ip);
 }
 
-// Rate Limiting für Einreichungen (max 10 pro IP in 10 Minuten)
-const submissionRateLimits = new Map();
-function checkSubmissionRateLimit(ip) {
-  const now = Date.now();
-  const entry = submissionRateLimits.get(ip) || { count: 0, resetAt: now + 10 * 60 * 1000 };
-  if (now > entry.resetAt) {
-    entry.count = 0;
-    entry.resetAt = now + 10 * 60 * 1000;
-  }
-  entry.count++;
-  submissionRateLimits.set(ip, entry);
-  return entry.count <= 10;
+// Session Token Management (HMAC-signierte Cookies)
+function createSessionToken() {
+  const expires = Date.now() + 24 * 60 * 60 * 1000; // 24 Stunden gültig
+  const payload = `${ADMIN_USER}:${expires}`;
+  const sig = crypto.createHmac('sha256', SESSION_SECRET).update(payload).digest('hex');
+  return Buffer.from(`${payload}:${sig}`).toString('base64');
 }
 
-// Basic Authentication Prüfung
-function checkBasicAuth(req, res) {
-  const ip = getClientIp(req);
-
-  if (!ADMIN_PASSWORD) {
-    res.writeHead(503, { 'Content-Type': 'text/plain; charset=utf-8' });
-    res.end('Admin-Bereich ist gesperrt: Bitte setze die Umgebungsvariable ADMIN_PASSWORD in Portainer.');
-    return false;
-  }
-
-  if (isIpLocked(ip)) {
-    const entry = failedLoginAttempts.get(ip);
-    const remainingMin = Math.ceil((entry.lockedUntil - Date.now()) / 60000);
-    res.writeHead(429, { 'Content-Type': 'text/plain; charset=utf-8' });
-    res.end(`Zu viele Fehlversuche. Diese IP-Adresse ist noch für ${remainingMin} Minute(n) gesperrt.`);
-    return false;
-  }
-
-  const authHeader = req.headers['authorization'];
-  if (!authHeader || !authHeader.startsWith('Basic ')) {
-    res.writeHead(401, {
-      'WWW-Authenticate': 'Basic realm="ESN Göttingen Bingo Admin"',
-      'Content-Type': 'text/plain; charset=utf-8'
-    });
-    res.end('Zugriff verweigert: Bitte mit Benutzername und Passwort anmelden.');
-    return false;
-  }
-
+function verifySessionToken(token) {
+  if (!token) return false;
   try {
-    const credentials = Buffer.from(authHeader.split(' ')[1], 'base64').toString('utf-8');
-    const colonIdx = credentials.indexOf(':');
-    if (colonIdx === -1) throw new Error('Format ungültig');
+    const raw = Buffer.from(token, 'base64').toString('utf-8');
+    const [user, expiresStr, sig] = raw.split(':');
+    const expires = parseInt(expiresStr, 10);
+    if (!expires || Date.now() > expires) return false;
+    const payload = `${user}:${expires}`;
+    const expectedSig = crypto.createHmac('sha256', SESSION_SECRET).update(payload).digest('hex');
+    return timingSafeCompare(sig, expectedSig);
+  } catch (e) {
+    return false;
+  }
+}
 
-    const user = credentials.substring(0, colonIdx);
-    const pass = credentials.substring(colonIdx + 1);
-
-    const userMatch = timingSafeCompare(user, ADMIN_USER);
-    const passMatch = timingSafeCompare(pass, ADMIN_PASSWORD);
-
-    if (userMatch && passMatch) {
-      resetFailedLogin(ip);
-      return true;
-    }
-  } catch (err) {}
-
-  recordFailedLogin(ip);
-  res.writeHead(401, {
-    'WWW-Authenticate': 'Basic realm="ESN Göttingen Bingo Admin"',
-    'Content-Type': 'text/plain; charset=utf-8'
+function parseCookies(req) {
+  const list = {};
+  const header = req.headers['cookie'];
+  if (!header) return list;
+  header.split(';').forEach(c => {
+    const parts = c.split('=');
+    list[parts.shift().trim()] = decodeURI(parts.join('='));
   });
-  res.end('Anmeldung fehlgeschlagen: Falscher Benutzername oder falsches Passwort.');
+  return list;
+}
+
+// Prüft ob Nutzer angemeldet ist (entweder per Cookie oder per Basic Auth)
+function isAuthenticated(req) {
+  // 1. Session Cookie prüfen
+  const cookies = parseCookies(req);
+  if (cookies.esn_session && verifySessionToken(cookies.esn_session)) {
+    return true;
+  }
+
+  // 2. Fallback: HTTP Basic Auth Header prüfen
+  const authHeader = req.headers['authorization'];
+  if (authHeader && authHeader.startsWith('Basic ')) {
+    try {
+      const credentials = Buffer.from(authHeader.split(' ')[1], 'base64').toString('utf-8');
+      const colonIdx = credentials.indexOf(':');
+      if (colonIdx !== -1) {
+        const user = credentials.substring(0, colonIdx);
+        const pass = credentials.substring(colonIdx + 1);
+        if (timingSafeCompare(user, ADMIN_USER) && timingSafeCompare(pass, ADMIN_PASSWORD)) {
+          return true;
+        }
+      }
+    } catch (e) {}
+  }
+
   return false;
 }
 
-// XSS-Schutz: HTML Escaping
 function escapeHtml(str) {
   if (!str) return '';
   return String(str)
@@ -166,25 +171,81 @@ function escapeHtml(str) {
     .replace(/'/g, '&#39;');
 }
 
-// Prüfung der Datei-Header (Magic Bytes) zur Erkennung echter Bilddateien
-// Verhindert das Einschleusen von Skripten oder schadhaftem Code
 function detectImageFormat(buffer) {
   if (!buffer || buffer.length < 8) return null;
-  // JPEG: FF D8 FF
-  if (buffer[0] === 0xFF && buffer[1] === 0xD8 && buffer[2] === 0xFF) {
-    return 'jpg';
-  }
-  // PNG: 89 50 4E 47
-  if (buffer[0] === 0x89 && buffer[1] === 0x50 && buffer[2] === 0x4E && buffer[3] === 0x47) {
-    return 'png';
-  }
-  // WebP: RIFF ... WEBP
-  if (buffer.length >= 12 &&
-      buffer.toString('ascii', 0, 4) === 'RIFF' &&
-      buffer.toString('ascii', 8, 12) === 'WEBP') {
-    return 'webp';
-  }
+  if (buffer[0] === 0xFF && buffer[1] === 0xD8 && buffer[2] === 0xFF) return 'jpg';
+  if (buffer[0] === 0x89 && buffer[1] === 0x50 && buffer[2] === 0x4E && buffer[3] === 0x47) return 'png';
+  if (buffer.length >= 12 && buffer.toString('ascii', 0, 4) === 'RIFF' && buffer.toString('ascii', 8, 12) === 'WEBP') return 'webp';
   return null;
+}
+
+// Login-Maske rendern
+function renderLoginForm(errorMsg = '') {
+  return `<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Admin Login — ESN Buddy Bingo</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --cyan: #00AEEF; --magenta: #EC008C; --navy: #2E3192;
+      --bg: #EEF1F7; --card: #FFFFFF; --text: #141733; --border: #D8DFEE;
+      --display: "Barlow Condensed", sans-serif; --body: "Inter", sans-serif;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: var(--bg); color: var(--text); font-family: var(--body); display: flex; align-items: center; justify-content: center; min-height: 100vh; padding: 16px; }
+    .card { background: var(--card); border: 1px solid var(--border); border-top: 8px solid var(--magenta); border-radius: 8px; width: 100%; max-width: 400px; padding: 32px 28px; box-shadow: 0 4px 14px rgba(0,0,0,0.06); }
+    h1 { font-family: var(--display); text-transform: uppercase; font-size: 26px; color: var(--navy); margin-bottom: 6px; letter-spacing: 0.04em; }
+    p.sub { font-size: 13.5px; color: #64748b; margin-bottom: 22px; }
+    .field { margin-bottom: 18px; }
+    label { display: block; font-family: var(--display); text-transform: uppercase; font-size: 12px; font-weight: 700; letter-spacing: 0.1em; color: #475569; margin-bottom: 6px; }
+    .input-wrap { position: relative; }
+    input[type="text"], input[type="password"] { width: 100%; padding: 11px 12px; border: 2px solid var(--border); border-radius: 6px; font-size: 14.5px; font-family: var(--body); color: var(--text); outline: none; transition: border-color 0.2s; }
+    input:focus { border-color: var(--navy); }
+    .toggle-pwd { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); background: none; border: none; cursor: pointer; font-size: 16px; opacity: 0.6; padding: 4px; }
+    .toggle-pwd:hover { opacity: 1; }
+    button.submit { width: 100%; padding: 12px; background: var(--navy); color: #fff; border: none; border-radius: 6px; font-family: var(--display); text-transform: uppercase; letter-spacing: 0.08em; font-size: 16px; font-weight: 700; cursor: pointer; margin-top: 8px; transition: background 0.2s; }
+    button.submit:hover { background: #1d2060; }
+    .error { background: #FEE2E2; border-left: 4px solid #EF4444; color: #991B1B; padding: 10px 12px; font-size: 13px; border-radius: 0 4px 4px 0; margin-bottom: 18px; }
+    .back { display: block; text-align: center; margin-top: 20px; font-size: 13px; color: #64748b; text-decoration: none; }
+    .back:hover { color: var(--navy); }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>ESN Bingo Admin</h1>
+    <p class="sub">Melde dich an, um Einreichungen und Fotos zu sehen.</p>
+    ${errorMsg ? `<div class="error">${escapeHtml(errorMsg)}</div>` : ''}
+    <form method="POST" action="/admin/login">
+      <div class="field">
+        <label for="username">Benutzername</label>
+        <input type="text" id="username" name="username" value="${escapeHtml(ADMIN_USER)}" required autocomplete="username">
+      </div>
+      <div class="field">
+        <label for="password">Passwort</label>
+        <div class="input-wrap">
+          <input type="password" id="password" name="password" required autocomplete="current-password" autofocus>
+          <button type="button" class="toggle-pwd" id="eyeBtn" aria-label="Passwort anzeigen">👁️</button>
+        </div>
+      </div>
+      <button type="submit" class="submit">Anmelden</button>
+    </form>
+    <a href="/" class="back">← Zurück zur Bingo-Seite</a>
+  </div>
+  <script>
+    const eye = document.getElementById('eyeBtn');
+    const pwd = document.getElementById('password');
+    eye.addEventListener('click', () => {
+      const isPwd = pwd.type === 'password';
+      pwd.type = isPwd ? 'text' : 'password';
+      eye.textContent = isPwd ? '🙈' : '👁️';
+    });
+  </script>
+</body>
+</html>`;
 }
 
 // ============================================================================
@@ -216,114 +277,67 @@ const server = http.createServer((req, res) => {
     return res.end(JSON.stringify({ status: 'ok', uptime: process.uptime() }));
   }
 
-  // 3. API: Einreichung speichern (POST /api/submit)
-  if (req.method === 'POST' && pathname === '/api/submit') {
-    if (!checkSubmissionRateLimit(clientIp)) {
-      res.writeHead(429, { 'Content-Type': 'application/json' });
-      return res.end(JSON.stringify({ error: 'Zu viele Einreichungen von dieser IP. Bitte später erneut versuchen.' }));
-    }
-
-    let body = [];
-    let size = 0;
-    const MAX_SIZE = 45 * 1024 * 1024; // 45 MB Maximalgröße
-
-    req.on('data', chunk => {
-      size += chunk.length;
-      if (size > MAX_SIZE) {
-        res.writeHead(413, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ error: 'Upload zu groß (maximal 45MB)' }));
-        req.destroy();
-        return;
-      }
-      body.push(chunk);
+  // 3. Admin Logout
+  if (req.method === 'GET' && pathname === '/admin/logout') {
+    res.writeHead(302, {
+      'Set-Cookie': 'esn_session=; Path=/admin; HttpOnly; SameSite=Lax; Max-Age=0',
+      'Location': '/admin'
     });
+    return res.end();
+  }
 
+  // 4. Admin Web-Login (POST /admin/login)
+  if (req.method === 'POST' && pathname === '/admin/login') {
+    let body = [];
+    req.on('data', chunk => body.push(chunk));
     req.on('end', () => {
-      try {
-        const raw = Buffer.concat(body).toString('utf-8');
-        const data = JSON.parse(raw);
+      const raw = Buffer.concat(body).toString('utf-8');
+      const params = new URLSearchParams(raw);
+      const user = (params.get('username') || '').trim();
+      const pass = (params.get('password') || '').trim();
 
-        // Validierung und Bereinigung
-        const code = String(data.code || 'GOE-XXXX').replace(/[^a-zA-Z0-9-]/g, '').slice(0, 16);
-        const names = Array.isArray(data.names) ? data.names.slice(0, 3).map(n => String(n || '').slice(0, 50)) : [];
-        const b1 = (names[0] || 'buddy1').trim();
-        const b2 = (names[1] || 'buddy2').trim();
-        const teamSlug = `${b1}_${b2}`.toLowerCase().replace(/[^a-z0-9_-]/g, '_').slice(0, 40);
-
-        const now = new Date();
-        const dateStr = now.toISOString().replace(/[:.]/g, '-').slice(0, 19);
-        const folderName = `${dateStr}_${code}_${teamSlug}`;
-
-        // Path Traversal Absicherung
-        const safeFolderName = path.basename(folderName).replace(/[^a-zA-Z0-9_-]/g, '_');
-        const folderPath = path.resolve(SUBMISSIONS_DIR, safeFolderName);
-
-        // Sicherstellen, dass der Pfad innerhalb von SUBMISSIONS_DIR bleibt
-        if (!folderPath.startsWith(path.resolve(SUBMISSIONS_DIR))) {
-          res.writeHead(400, { 'Content-Type': 'application/json' });
-          return res.end(JSON.stringify({ error: 'Ungültiger Pfad' }));
-        }
-
-        fs.mkdirSync(folderPath, { recursive: true });
-
-        // Fotos validieren (Magic Bytes Check) und speichern
-        const photoFiles = {};
-        const photos = typeof data.photos === 'object' && data.photos !== null ? data.photos : {};
-        let savedPhotoCount = 0;
-
-        for (const [key, dataUrl] of Object.entries(photos)) {
-          if (typeof dataUrl === 'string' && dataUrl.startsWith('data:image/')) {
-            const matches = dataUrl.match(/^data:image\/[a-zA-Z0-9+]+;base64,(.+)$/);
-            if (matches) {
-              const imgBuffer = Buffer.from(matches[1], 'base64');
-              const realExt = detectImageFormat(imgBuffer);
-
-              // Nur echte Bilder speichern!
-              if (realExt) {
-                const safeKey = key.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 10);
-                const fileName = `foto_${safeKey}.${realExt}`;
-                const filePath = path.join(folderPath, fileName);
-                fs.writeFileSync(filePath, imgBuffer);
-                photoFiles[key] = fileName;
-                savedPhotoCount++;
-              }
-            }
-          }
-        }
-
-        // Metadaten als submission.json speichern
-        const meta = {
-          code: code,
-          names: names,
-          score: String(data.score || '').slice(0, 20),
-          maxScore: Number(data.maxScore) || 68,
-          tasks: String(data.tasks || '').slice(0, 10000),
-          events: String(data.events || '').slice(0, 5000),
-          feedback: String(data.feedback || '').slice(0, 3000),
-          submittedAt: now.toISOString(),
-          ip: clientIp,
-          photoCount: savedPhotoCount,
-          photoFiles: photoFiles
-        };
-
-        fs.writeFileSync(path.join(folderPath, 'submission.json'), JSON.stringify(meta, null, 2), 'utf-8');
-
-        console.log(`[INFO] Neue Einreichung erhalten: Code ${code} von Team ${b1} & ${b2} (${savedPhotoCount} Fotos)`);
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ success: true, code: code, photosSaved: savedPhotoCount }));
-      } catch (err) {
-        console.error('[ERROR] Fehler beim Verarbeiten der Einreichung:', err);
-        res.writeHead(500, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ error: 'Serverfehler beim Verarbeiten der Einreichung.' }));
+      if (!ADMIN_PASSWORD) {
+        res.writeHead(503, { 'Content-Type': 'text/html; charset=utf-8' });
+        return res.end(renderLoginForm('Admin-Bereich gesperrt: Die Variable ADMIN_PASSWORD ist in Portainer nicht gesetzt.'));
       }
+
+      if (isIpLocked(clientIp)) {
+        res.writeHead(429, { 'Content-Type': 'text/html; charset=utf-8' });
+        return res.end(renderLoginForm('Zu viele Fehlversuche von dieser IP. Bitte 3 Minuten warten.'));
+      }
+
+      const userMatch = timingSafeCompare(user, ADMIN_USER);
+      const passMatch = timingSafeCompare(pass, ADMIN_PASSWORD);
+
+      if (userMatch && passMatch) {
+        resetFailedLogin(clientIp);
+        console.log(`[AUTH] Erfolgreicher Login von IP ${clientIp} als "${user}"`);
+        const token = createSessionToken();
+        res.writeHead(302, {
+          'Set-Cookie': `esn_session=${token}; Path=/admin; HttpOnly; SameSite=Lax; Max-Age=86400`,
+          'Location': '/admin'
+        });
+        return res.end();
+      }
+
+      // Fehlgeschlagener Login
+      recordFailedLogin(clientIp);
+      console.warn(`[AUTH] Login fehlgeschlagen von IP ${clientIp}:`);
+      console.warn(`  - Eingegebener Benutzer: "${user}" (Erwartet: "${ADMIN_USER}" -> ${userMatch ? 'OK' : 'FALSCH'})`);
+      console.warn(`  - Eingegebenes Passwort: Länge ${pass.length} Zeichen (Erwartet: Länge ${ADMIN_PASSWORD.length} Zeichen -> ${passMatch ? 'OK' : 'FALSCH'})`);
+
+      res.writeHead(401, { 'Content-Type': 'text/html; charset=utf-8' });
+      return res.end(renderLoginForm('Falscher Benutzername oder falsches Passwort. Beachte Groß-/Kleinschreibung.'));
     });
     return;
   }
 
-  // 4. Admin: Geschütztes Foto abrufen (GET /admin/photo/:folder/:filename)
-  // KEIN unberechtigter Zugriff auf Fotos möglich!
+  // 5. Admin: Geschütztes Foto abrufen (GET /admin/photo/:folder/:filename)
   if (req.method === 'GET' && pathname.startsWith('/admin/photo/')) {
-    if (!checkBasicAuth(req, res)) return;
+    if (!isAuthenticated(req)) {
+      res.writeHead(401, { 'Content-Type': 'text/plain; charset=utf-8' });
+      return res.end('Zugriff verweigert: Bitte vorher im Admin-Bereich anmelden.');
+    }
 
     const parts = pathname.replace('/admin/photo/', '').split('/');
     if (parts.length !== 2) {
@@ -334,7 +348,6 @@ const server = http.createServer((req, res) => {
     const folder = path.basename(parts[0]);
     const file = path.basename(parts[1]);
 
-    // Strikte Whitelist gegen Path Traversal
     if (!/^[a-zA-Z0-9_\-]+$/.test(folder) || !/^[a-zA-Z0-9_\-]+\.(jpg|jpeg|png|webp)$/.test(file)) {
       res.writeHead(400, { 'Content-Type': 'text/plain; charset=utf-8' });
       return res.end('Ungültige Bildanforderung.');
@@ -355,9 +368,12 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  // 5. Admin: CSV-Export (GET /admin/export.csv)
+  // 6. Admin: CSV-Export (GET /admin/export.csv)
   if (req.method === 'GET' && pathname === '/admin/export.csv') {
-    if (!checkBasicAuth(req, res)) return;
+    if (!isAuthenticated(req)) {
+      res.writeHead(302, { 'Location': '/admin' });
+      return res.end();
+    }
 
     const entries = [];
     try {
@@ -390,9 +406,12 @@ const server = http.createServer((req, res) => {
     return res.end(csv);
   }
 
-  // 6. Admin Dashboard: Übersicht aller Einreichungen (GET /admin)
+  // 7. Admin Dashboard (GET /admin)
   if (req.method === 'GET' && pathname === '/admin') {
-    if (!checkBasicAuth(req, res)) return;
+    if (!isAuthenticated(req)) {
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+      return res.end(renderLoginForm());
+    }
 
     const submissions = [];
     try {
@@ -431,10 +450,12 @@ const server = http.createServer((req, res) => {
     .container { max-width: 1100px; margin: 0 auto; }
     header { background: var(--navy); color: #fff; padding: 20px 24px; border-radius: 8px; margin-bottom: 24px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 14px; }
     h1 { font-family: var(--font-display); font-size: 32px; letter-spacing: 0.05em; text-transform: uppercase; }
-    .stats { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+    .stats { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
     .badge { background: var(--magenta); color: #fff; padding: 6px 14px; border-radius: 20px; font-weight: 700; font-size: 14px; }
-    .btn { background: #fff; color: var(--navy); text-decoration: none; padding: 8px 16px; border-radius: 4px; font-weight: 600; font-size: 13px; text-transform: uppercase; font-family: var(--font-display); letter-spacing: 0.05em; }
+    .btn { background: #fff; color: var(--navy); text-decoration: none; padding: 8px 14px; border-radius: 4px; font-weight: 600; font-size: 13px; text-transform: uppercase; font-family: var(--font-display); letter-spacing: 0.05em; border: none; cursor: pointer; display: inline-flex; align-items: center; }
     .btn:hover { background: #e0e6f5; }
+    .btn-logout { background: rgba(255,255,255,0.15); color: #fff; }
+    .btn-logout:hover { background: rgba(255,255,255,0.3); }
     .cards { display: flex; flex-direction: column; gap: 20px; }
     .card { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 20px; box-shadow: 0 2px 6px rgba(0,0,0,0.04); }
     .card-head { display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 10px; border-bottom: 1px solid var(--border); padding-bottom: 12px; margin-bottom: 14px; }
@@ -458,12 +479,13 @@ const server = http.createServer((req, res) => {
   <header>
     <div>
       <h1>ESN Göttingen — Bingo Admin</h1>
-      <p style="font-size: 13px; opacity: 0.85;">Sicherer Administrationsbereich</p>
+      <p style="font-size: 13px; opacity: 0.85;">Angemeldet als <b>${escapeHtml(ADMIN_USER)}</b></p>
     </div>
     <div class="stats">
       <span class="badge">${submissions.length} Einreichung${submissions.length === 1 ? '' : 'en'}</span>
-      <a href="/admin/export.csv" class="btn">📥 Excel / CSV Export</a>
-      <a href="/" target="_blank" class="btn">🌐 Zur Bingo-Seite</a>
+      <a href="/admin/export.csv" class="btn">📥 Excel Export</a>
+      <a href="/" target="_blank" class="btn">🌐 Bingo-Karte</a>
+      <a href="/admin/logout" class="btn btn-logout">Abmelden</a>
     </div>
   </header>
 
@@ -535,12 +557,105 @@ const server = http.createServer((req, res) => {
     return res.end(html);
   }
 
-  // 404 für alle anderen Routen
+  // 8. API: Einreichung speichern (POST /api/submit)
+  if (req.method === 'POST' && pathname === '/api/submit') {
+    let body = [];
+    let size = 0;
+    const MAX_SIZE = 45 * 1024 * 1024; // 45 MB
+
+    req.on('data', chunk => {
+      size += chunk.length;
+      if (size > MAX_SIZE) {
+        res.writeHead(413, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Upload zu groß (maximal 45MB)' }));
+        req.destroy();
+        return;
+      }
+      body.push(chunk);
+    });
+
+    req.on('end', () => {
+      try {
+        const raw = Buffer.concat(body).toString('utf-8');
+        const data = JSON.parse(raw);
+
+        const code = String(data.code || 'GOE-XXXX').replace(/[^a-zA-Z0-9-]/g, '').slice(0, 16);
+        const names = Array.isArray(data.names) ? data.names.slice(0, 3).map(n => String(n || '').slice(0, 50)) : [];
+        const b1 = (names[0] || 'buddy1').trim();
+        const b2 = (names[1] || 'buddy2').trim();
+        const teamSlug = `${b1}_${b2}`.toLowerCase().replace(/[^a-z0-9_-]/g, '_').slice(0, 40);
+
+        const now = new Date();
+        const dateStr = now.toISOString().replace(/[:.]/g, '-').slice(0, 19);
+        const folderName = `${dateStr}_${code}_${teamSlug}`;
+
+        const safeFolderName = path.basename(folderName).replace(/[^a-zA-Z0-9_-]/g, '_');
+        const folderPath = path.resolve(SUBMISSIONS_DIR, safeFolderName);
+
+        if (!folderPath.startsWith(path.resolve(SUBMISSIONS_DIR))) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          return res.end(JSON.stringify({ error: 'Ungültiger Pfad' }));
+        }
+
+        fs.mkdirSync(folderPath, { recursive: true });
+
+        const photoFiles = {};
+        const photos = typeof data.photos === 'object' && data.photos !== null ? data.photos : {};
+        let savedPhotoCount = 0;
+
+        for (const [key, dataUrl] of Object.entries(photos)) {
+          if (typeof dataUrl === 'string' && dataUrl.startsWith('data:image/')) {
+            const matches = dataUrl.match(/^data:image\/[a-zA-Z0-9+]+;base64,(.+)$/);
+            if (matches) {
+              const imgBuffer = Buffer.from(matches[1], 'base64');
+              const realExt = detectImageFormat(imgBuffer);
+
+              if (realExt) {
+                const safeKey = key.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 10);
+                const fileName = `foto_${safeKey}.${realExt}`;
+                const filePath = path.join(folderPath, fileName);
+                fs.writeFileSync(filePath, imgBuffer);
+                photoFiles[key] = fileName;
+                savedPhotoCount++;
+              }
+            }
+          }
+        }
+
+        const meta = {
+          code: code,
+          names: names,
+          score: String(data.score || '').slice(0, 20),
+          maxScore: Number(data.maxScore) || 68,
+          tasks: String(data.tasks || '').slice(0, 10000),
+          events: String(data.events || '').slice(0, 5000),
+          feedback: String(data.feedback || '').slice(0, 3000),
+          submittedAt: now.toISOString(),
+          ip: clientIp,
+          photoCount: savedPhotoCount,
+          photoFiles: photoFiles
+        };
+
+        fs.writeFileSync(path.join(folderPath, 'submission.json'), JSON.stringify(meta, null, 2), 'utf-8');
+
+        console.log(`[INFO] Neue Einreichung erhalten: Code ${code} von Team ${b1} & ${b2} (${savedPhotoCount} Fotos)`);
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ success: true, code: code, photosSaved: savedPhotoCount }));
+      } catch (err) {
+        console.error('[ERROR] Fehler beim Verarbeiten der Einreichung:', err);
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Serverfehler beim Verarbeiten der Einreichung.' }));
+      }
+    });
+    return;
+  }
+
+  // 404 für alles andere
   res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
   res.end('404 Not Found');
 });
 
 server.listen(PORT, '0.0.0.0', () => {
-  console.log(`[START] ESN Bingo Server läuft sicher auf Port ${PORT}`);
-  console.log(`[START] Admin-Bereich: http://localhost:${PORT}/admin (User: ${ADMIN_USER})`);
+  console.log(`[START] ESN Bingo Server läuft auf Port ${PORT}`);
+  console.log(`[START] Admin-Bereich: http://localhost:${PORT}/admin`);
 });
